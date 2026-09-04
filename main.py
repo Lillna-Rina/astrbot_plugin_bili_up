@@ -514,10 +514,14 @@ class BiliUpPlugin(star.Star):
                 data = result.get("data")
                 if not bvid and isinstance(data, dict):
                     bvid = data.get("bvid") or ""
+            coop_note = ""
+            if isinstance(result, dict) and result.get("_coop_failed"):
+                coop_note = "（联合投稿失败，已自动降级为普通投稿；可能账号未开通联合投稿权限）\n"
             if bvid:
                 await self._send(
                     ev,
-                    f"✅ 投稿成功！\nhttps://www.bilibili.com/video/{bvid}\n"
+                    f"✅ 投稿成功！\n{coop_note}"
+                    f"https://www.bilibili.com/video/{bvid}\n"
                     "稿件已进入审核流程，可在 B站创作中心查看进度。",
                 )
             else:

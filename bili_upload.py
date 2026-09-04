@@ -295,8 +295,9 @@ def bili_upload(
 
         # 联合创作者（可选）
         cooperate_uids = meta.get("cooperate_uids")
+        extra_fields_json = None
         if cooperate_uids:
-            payload["extra_fields"] = json.dumps({
+            extra_fields_json = json.dumps({
                 "cooperate_user": [
                     {"uid": uid, "role": 1, "sub_type": 0}
                     for uid in cooperate_uids
@@ -309,12 +310,28 @@ def bili_upload(
         except Exception:
             pass
 
-        ret = _json(session.post(
-            f"https://member.bilibili.com/x/vu/web/add?csrf={csrf}",
-            json=payload,
-            timeout=60,
-        ), "投稿提交")
-        _bili_raise(ret, "投稿提交")
-        return ret
+        # 投稿（优先带联合创作者，失败则自动降级为普通投稿）
+        def _do_submit(use_coop: bool) -> dict:
+            p = dict(payload)
+            if use_coop and extra_fields_json:
+                p["extra_fields"] = extra_fields_json
+            ret = _json(session.post(
+                f"https://member.bilibili.com/x/vu/web/add?csrf={csrf}",
+                json=p,
+                timeout=60,
+            ), "投稿提交")
+            _bili_raise(ret, "投稿提交")
+            return ret
+
+        try:
+            result = _do_submit(True)
+        except BiliUploadError as e:
+            if "参数错误" in str(e) and extra_fields_json:
+                logger.warning("联合投稿失败，降级为普通投稿: %s", e)
+                result = _do_submit(False)
+                result["_coop_failed"] = True  # 标记供调用方提示
+            else:
+                raise
+        return result
     finally:
         session.close()
