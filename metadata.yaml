@@ -1,0 +1,11 @@
+name: astrbot_plugin_bili_up
+desc: QQ 内扫码绑定 B站账号并交互式投稿视频（NapCat/OneBot）
+short_desc: QQ → B站 扫码绑定与视频投稿
+author: Lillna-Rina
+version: 0.1.0
+repo: https://github.com/Lillna-Rina/astrbot_plugin_bili_up
+tags:
+  - bilibili
+  - 投稿
+  - onebot
+  - napcat

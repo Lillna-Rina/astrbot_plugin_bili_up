@@ -1,0 +1,17 @@
+{
+  "recv_timeout": {
+    "description": "交互流程中每步等待用户回复的超时时间（秒）",
+    "type": "int",
+    "default": 300
+  },
+  "upload_timeout": {
+    "description": "上传过程的会话保活超时（秒），建议不小于视频可能的上传耗时",
+    "type": "int",
+    "default": 7200
+  },
+  "max_video_mb": {
+    "description": "允许投稿的视频最大体积（MB）",
+    "type": "int",
+    "default": 8192
+  }
+}
