@@ -5,11 +5,14 @@ astrbot_plugin_bili_up —— AstrBot v4 插件：QQ 内扫码绑定 B站并交�
 兼容目标：AstrBot >= 4.0（Star 插件体系，依赖内置 Main 星提供 SessionWaiter 触发）。
 
 命令（统一以 /biliup 为前缀；旧版 /b站xxx、/上传视频 仍可用作别名）：
-  /biliup绑定      生成 B站登录二维码并轮询，成功后 Cookie 持久化（按 QQ 号）
-  /biliup状态      校验当前绑定账号是否有效
-  /biliup解绑      删除本地绑定
+  /biliup绑定      生成 B站登录二维码并轮询，成功后 Cookie 持久化（按会话隔离：每个群/每个私聊独立）
+  /biliup状态      校验当前会话绑定的 B站账号是否有效
+  /biliup解绑      删除当前会话的绑定（不影响其他会话）
   /biliup分区      查看常用分区(tid)列表
   /biliup上传视频  投稿流程：发视频 → 标题 → 原创/转载 → 分区 → 简介 → 标签 → 封面(可选) → 动态(可选) → 回复【投稿】确认
+
+会话隔离：B站凭证按 unified_msg_origin（群号/私聊对端）存储，
+A 群上传的视频只会投稿到 A 群绑定的账号；B 群与私聊各自独立、互不通用。
 
 建议私聊使用；群聊时流程期间同群其他消息会被会话等待器接管。
 """
@@ -69,26 +72,36 @@ class BiliUpPlugin(star.Star):
         except Exception:
             return "unknown"
 
-    def _cookie_key(self, uid: str) -> str:
-        return f"cookies_{uid}"
+    @staticmethod
+    def _cookie_key(event: AstrMessageEvent) -> str:
+        """Cookie 存储键：按会话（群/私聊）完全隔离。
 
-    async def _load_cookies(self, uid: str) -> dict | None:
+        unified_msg_origin 唯一标识一个会话（如 aiocqhttp:GroupMessage:<群号>
+        或 aiocqhttp:FriendMessage:<QQ号>），因此：
+        - A 群与 B 群各自绑定各自的 B站账号；
+        - 私聊与任意群聊也相互独立。
+        """
+        raw = str(event.unified_msg_origin)
+        safe = re.sub(r"[^0-9A-Za-z_\-]", "_", raw)
+        return f"cookies_{safe}"
+
+    async def _load_cookies(self, event: AstrMessageEvent) -> dict | None:
         try:
-            return await self.get_kv_data(self._cookie_key(uid), None)
+            return await self.get_kv_data(self._cookie_key(event), None)
         except Exception as e:
             module_logger.warning("读取 KV 失败: %s", e)
             return None
 
-    async def _save_cookies(self, uid: str, cookies: dict) -> None:
+    async def _save_cookies(self, event: AstrMessageEvent, cookies: dict) -> None:
         try:
-            await self.put_kv_data(self._cookie_key(uid), cookies)
+            await self.put_kv_data(self._cookie_key(event), cookies)
         except Exception as e:
             module_logger.warning("写入 KV 失败: %s", e)
             raise
 
-    async def _delete_cookies(self, uid: str) -> None:
+    async def _delete_cookies(self, event: AstrMessageEvent) -> None:
         try:
-            await self.delete_kv_data(self._cookie_key(uid))
+            await self.delete_kv_data(self._cookie_key(event))
         except Exception as e:
             module_logger.warning("删除 KV 失败: %s", e)
 
@@ -129,7 +142,6 @@ class BiliUpPlugin(star.Star):
     @filter.command("biliup绑定", alias={"b站绑定", "biliup 绑定"})
     async def cmd_bind(self, event: AstrMessageEvent) -> None:
         event.should_call_llm(False)
-        uid = self._uid(event)
         try:
             key, qr_b64 = await self.login.create_qrcode()
         except Exception as e:
@@ -139,7 +151,8 @@ class BiliUpPlugin(star.Star):
 
         await self._send_qr(
             event,
-            "请使用【哔哩哔哩】App 扫码登录（3 分钟内有效）：",
+            "请使用【哔哩哔哩】App 扫码登录（3 分钟内有效）。\n"
+            "注意：本会话（群/私聊）将独立绑定该 B站账号，与其他会话互不影响。",
             qr_b64,
         )
 
@@ -151,7 +164,7 @@ class BiliUpPlugin(star.Star):
         )
         if cookies and cookies.get("SESSDATA"):
             try:
-                await self._save_cookies(uid, cookies)
+                await self._save_cookies(event, cookies)
             except Exception as e:
                 await self._send(event, f"❌ 绑定信息保存失败: {e}")
                 event.stop_event()
@@ -170,10 +183,9 @@ class BiliUpPlugin(star.Star):
     @filter.command("biliup状态", alias={"b站状态", "biliup 状态"})
     async def cmd_status(self, event: AstrMessageEvent) -> None:
         event.should_call_llm(False)
-        uid = self._uid(event)
-        cookies = await self._load_cookies(uid)
+        cookies = await self._load_cookies(event)
         if not cookies:
-            await self._send(event, "⚠️ 尚未绑定，请发送 /biliup绑定")
+            await self._send(event, "⚠️ 本会话尚未绑定，请发送 /biliup绑定")
             event.stop_event()
             return
         try:
@@ -191,13 +203,12 @@ class BiliUpPlugin(star.Star):
     @filter.command("biliup解绑", alias={"b站解绑", "biliup 解绑"})
     async def cmd_unbind(self, event: AstrMessageEvent) -> None:
         event.should_call_llm(False)
-        uid = self._uid(event)
-        cookies = await self._load_cookies(uid)
-        await self._delete_cookies(uid)
+        cookies = await self._load_cookies(event)
+        await self._delete_cookies(event)
         if cookies:
-            await self._send(event, "✅ 已解绑并删除本地 Cookie。")
+            await self._send(event, "✅ 已解绑本会话并删除 Cookie（不影响其他会话的绑定）。")
         else:
-            await self._send(event, "⚠️ 当前没有绑定记录。")
+            await self._send(event, "⚠️ 本会话当前没有绑定记录。")
         event.stop_event()
 
     @filter.command("biliup分区", alias={"b站分区", "biliup 分区"})
@@ -219,9 +230,9 @@ class BiliUpPlugin(star.Star):
         event.should_call_llm(False)
         umo = event.unified_msg_origin
         uid = self._uid(event)
-        cookies = await self._load_cookies(uid)
+        cookies = await self._load_cookies(event)
         if not cookies:
-            await self._send(event, "⚠️ 尚未绑定 B站，请先发送 /biliup绑定 扫码登录。")
+            await self._send(event, "⚠️ 本会话尚未绑定 B站，请先发送 /biliup绑定 扫码登录。")
             event.stop_event()
             return
         if umo in self._flows:
