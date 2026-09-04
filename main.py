@@ -270,6 +270,7 @@ class BiliUpPlugin(star.Star):
             "owner": owner,
             "step": "media",      # media/title/copyright/tid/desc/tags/cover/dynamic/confirm
             "meta": {"uid": uid},
+            "cookies": cookies,
             "media_tries": 0,
             "done": False,
         }
@@ -480,7 +481,7 @@ class BiliUpPlugin(star.Star):
             await self._send(ev, "🚀 开始上传，大文件耗时较长，期间无需操作…")
             try:
                 result = await asyncio.to_thread(
-                    bili_upload, cookies, meta, on_progress,
+                    bili_upload, ctx["cookies"], meta, on_progress,
                 )
             except Exception as e:
                 module_logger.exception("投稿失败")
