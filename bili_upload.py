@@ -65,6 +65,7 @@ def _json(resp: requests.Response, what: str = "API") -> dict:
 def _bili_raise(ret: dict, what: str) -> None:
     if ret.get("code") != 0:
         msg = ret.get("message") or ret.get("msg") or str(ret)
+        logger.error("%s 失败响应: %s", what, json.dumps(ret, ensure_ascii=False))
         raise BiliUploadError(f"{what}失败: {msg}")
 
 
@@ -283,9 +284,10 @@ def bili_upload(
             "desc": desc,
             "desc_v2": [{"raw_text": desc, "biz_id": "", "type": 1}],
             "dynamic": meta.get("dynamic", ""),
-            "subtitle": {"open": False, "lan": ""},
+            "subtitle": {"open": 0, "lan": ""},
             "tag": ",".join(t.strip() for t in str(meta.get("tags", "")).split(",") if t.strip()),
             "videos": [part],
+            "dtime": None,
         }
 
         # 封面（可选）
@@ -309,6 +311,16 @@ def bili_upload(
             session.get("https://member.bilibili.com/x/geetest/pre/add", timeout=10)
         except Exception:
             pass
+
+        # 调试：记录关键 payload 字段（不含封面/联合创作者长文本）
+        logger.info(
+            "submit payload keys: copyright=%s tid=%s title_len=%s tag=%s videos=%s "
+            "subtitle_open=%s dtime=%s cover_len=%s extra_fields=%s",
+            payload["copyright"], payload["tid"], len(payload["title"]),
+            payload["tag"], len(payload["videos"]),
+            payload["subtitle"]["open"], payload.get("dtime"),
+            len(payload.get("cover", "")), bool(extra_fields_json),
+        )
 
         # 投稿（优先带联合创作者，失败则自动降级为普通投稿）
         def _do_submit(use_coop: bool) -> dict:
