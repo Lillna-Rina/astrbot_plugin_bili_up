@@ -4,12 +4,12 @@ astrbot_plugin_bili_up —— AstrBot v4 插件：QQ 内扫码绑定 B站并交�
 
 兼容目标：AstrBot >= 4.0（Star 插件体系，依赖内置 Main 星提供 SessionWaiter 触发）。
 
-命令：
-  /b站绑定   生成 B站登录二维码并轮询，成功后 Cookie 持久化（按 QQ 号）
-  /b站状态   校验当前绑定账号是否有效
-  /b站解绑   删除本地绑定
-  /b站分区   查看常用分区(tid)列表
-  /上传视频  投稿流程：发视频 → 标题 → 原创/转载 → 分区 → 简介 → 标签 → 封面(可选) → 动态(可选) → 回复【投稿】确认
+命令（统一以 /biliup 为前缀；旧版 /b站xxx、/上传视频 仍可用作别名）：
+  /biliup绑定      生成 B站登录二维码并轮询，成功后 Cookie 持久化（按 QQ 号）
+  /biliup状态      校验当前绑定账号是否有效
+  /biliup解绑      删除本地绑定
+  /biliup分区      查看常用分区(tid)列表
+  /biliup上传视频  投稿流程：发视频 → 标题 → 原创/转载 → 分区 → 简介 → 标签 → 封面(可选) → 动态(可选) → 回复【投稿】确认
 
 建议私聊使用；群聊时流程期间同群其他消息会被会话等待器接管。
 """
@@ -124,9 +124,9 @@ class BiliUpPlugin(star.Star):
                 module_logger.debug("清理临时文件失败 %s: %s", p, e)
 
     # ------------------------------------------------------------------
-    # /b站绑定
+    # /biliup绑定
     # ------------------------------------------------------------------
-    @filter.command("b站绑定")
+    @filter.command("biliup绑定", alias={"b站绑定", "biliup 绑定"})
     async def cmd_bind(self, event: AstrMessageEvent) -> None:
         event.should_call_llm(False)
         uid = self._uid(event)
@@ -158,22 +158,22 @@ class BiliUpPlugin(star.Star):
                 return
             await self._send(
                 event,
-                "✅ B站绑定成功！\n发送 /上传视频 开始投稿，/b站状态 查看账号。",
+                "✅ B站绑定成功！\n发送 /biliup上传视频 开始投稿，/biliup状态 查看账号。",
             )
         else:
-            await self._send(event, "❌ 登录超时或失败，请重新发送 /b站绑定")
+            await self._send(event, "❌ 登录超时或失败，请重新发送 /biliup绑定")
         event.stop_event()
 
     # ------------------------------------------------------------------
-    # /b站状态 /b站解绑 /b站分区
+    # /biliup状态 /biliup解绑 /biliup分区
     # ------------------------------------------------------------------
-    @filter.command("b站状态")
+    @filter.command("biliup状态", alias={"b站状态", "biliup 状态"})
     async def cmd_status(self, event: AstrMessageEvent) -> None:
         event.should_call_llm(False)
         uid = self._uid(event)
         cookies = await self._load_cookies(uid)
         if not cookies:
-            await self._send(event, "⚠️ 尚未绑定，请发送 /b站绑定")
+            await self._send(event, "⚠️ 尚未绑定，请发送 /biliup绑定")
             event.stop_event()
             return
         try:
@@ -185,10 +185,10 @@ class BiliUpPlugin(star.Star):
         if ok:
             await self._send(event, f"✅ 已绑定 B站账号：{uname}（mid={mid}）")
         else:
-            await self._send(event, "❌ Cookie 已失效，请重新发送 /b站绑定")
+            await self._send(event, "❌ Cookie 已失效，请重新发送 /biliup绑定")
         event.stop_event()
 
-    @filter.command("b站解绑")
+    @filter.command("biliup解绑", alias={"b站解绑", "biliup 解绑"})
     async def cmd_unbind(self, event: AstrMessageEvent) -> None:
         event.should_call_llm(False)
         uid = self._uid(event)
@@ -200,7 +200,7 @@ class BiliUpPlugin(star.Star):
             await self._send(event, "⚠️ 当前没有绑定记录。")
         event.stop_event()
 
-    @filter.command("b站分区")
+    @filter.command("biliup分区", alias={"b站分区", "biliup 分区"})
     async def cmd_tids(self, event: AstrMessageEvent) -> None:
         event.should_call_llm(False)
         lines = [f"{name}: {tid}" for name, tid in COMMON_TIDS.items()]
@@ -212,16 +212,16 @@ class BiliUpPlugin(star.Star):
         event.stop_event()
 
     # ------------------------------------------------------------------
-    # /上传视频 —— 交互式投稿主流程
+    # /biliup上传视频 —— 交互式投稿主流程
     # ------------------------------------------------------------------
-    @filter.command("上传视频")
+    @filter.command("biliup上传视频", alias={"上传视频", "biliup 上传视频"})
     async def cmd_upload(self, event: AstrMessageEvent) -> None:
         event.should_call_llm(False)
         umo = event.unified_msg_origin
         uid = self._uid(event)
         cookies = await self._load_cookies(uid)
         if not cookies:
-            await self._send(event, "⚠️ 尚未绑定 B站，请先发送 /b站绑定 扫码登录。")
+            await self._send(event, "⚠️ 尚未绑定 B站，请先发送 /biliup绑定 扫码登录。")
             event.stop_event()
             return
         if umo in self._flows:
@@ -233,7 +233,7 @@ class BiliUpPlugin(star.Star):
         try:
             await self._run_upload_flow(event, umo, uid, cookies)
         except TimeoutError:
-            await self._send(event, "⏱ 等待超时，本次投稿已结束。可重新发送 /上传视频")
+            await self._send(event, "⏱ 等待超时，本次投稿已结束。可重新发送 /biliup上传视频")
         except asyncio.CancelledError:
             raise
         except Exception as e:
@@ -331,7 +331,7 @@ class BiliUpPlugin(star.Star):
             if comp is None:
                 ctx["media_tries"] += 1
                 if ctx["media_tries"] >= 3:
-                    await self._send(ev, "❌ 多次未收到视频文件，流程已结束。可重新发送 /上传视频")
+                    await self._send(ev, "❌ 多次未收到视频文件，流程已结束。可重新发送 /biliup上传视频")
                     ctx["done"] = True
                     controller.stop()
                     return
@@ -371,14 +371,14 @@ class BiliUpPlugin(star.Star):
             elif "原创" in text:
                 meta["copyright"] = 1
                 ctx["step"] = "tid"
-                await self._send(ev, "【3/8】请输入分区（分区名或数字 tid，/b站分区 可查看列表）：")
+                await self._send(ev, "【3/8】请输入分区（分区名或数字 tid，/biliup分区 可查看列表）：")
             else:
                 await self._send(ev, "❌ 请回复【原创】或【转载】。")
 
         elif step == "source":
             meta["source"] = "" if text == "跳过" else text
             ctx["step"] = "tid"
-            await self._send(ev, "【3/8】请输入分区（分区名或数字 tid，/b站分区 可查看列表）：")
+            await self._send(ev, "【3/8】请输入分区（分区名或数字 tid，/biliup分区 可查看列表）：")
 
         elif step == "tid":
             tid = self._resolve_tid(text)

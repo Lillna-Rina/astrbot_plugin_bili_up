@@ -257,7 +257,7 @@ def bili_upload(
 
     csrf = cookies.get("bili_jct", "")
     if not csrf:
-        raise BiliUploadError("Cookie 缺少 bili_jct，请重新 /b站绑定")
+        raise BiliUploadError("Cookie 缺少 bili_jct，请重新 /biliup绑定")
 
     session = _make_session(cookies)
     try:
