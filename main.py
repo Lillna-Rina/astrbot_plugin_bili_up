@@ -9,7 +9,7 @@ astrbot_plugin_bili_up —— AstrBot v4 插件：QQ 内扫码绑定 B站并交�
   /biliup状态      校验当前会话绑定的 B站账号是否有效
   /biliup解绑      删除当前会话的绑定（不影响其他会话）
   /biliup分区      查看常用分区(tid)列表
-  /biliup上传视频  投稿流程：发视频 → 标题 → 原创/转载 → 分区 → 简介 → 标签 → 封面(可选) → 动态(可选) → 回复【投稿】确认
+  /biliup上传视频  投稿流程：发视频 → 标题 → 原创/转载 → 分区 → 简介 → 标签 → 封面(可选) → 动态(可选) → 联合创作者(可选) → 回复【投稿】确认
 
 会话隔离：B站凭证按 unified_msg_origin（群号/私聊对端）存储，
 A 群上传的视频只会投稿到 A 群绑定的账号；B 群与私聊各自独立、互不通用。
@@ -368,29 +368,29 @@ class BiliUpPlugin(star.Star):
             meta["path"] = path
             meta["size_mb"] = size_mb
             ctx["step"] = "title"
-            await self._send(ev, f"✅ 视频已接收（{size_mb:.1f}MB）。\n【1/8】请输入视频标题（不超过 80 字）：")
+            await self._send(ev, f"✅ 视频已接收（{size_mb:.1f}MB）。\n【1/9】请输入视频标题（不超过 80 字）：")
 
         elif step == "title":
             meta["title"] = text[:80]
             ctx["step"] = "copyright"
-            await self._send(ev, "【2/8】该稿件为 原创 还是 转载？")
+            await self._send(ev, "【2/9】该稿件为 原创 还是 转载？")
 
         elif step == "copyright":
             if "转载" in text:
                 meta["copyright"] = 2
                 ctx["step"] = "source"
-                await self._send(ev, "【2.5/8】转载需注明出处，请输入原视频链接（回复【跳过】留空）：")
+                await self._send(ev, "【2.5/9】转载需注明出处，请输入原视频链接（回复【跳过】留空）：")
             elif "原创" in text:
                 meta["copyright"] = 1
                 ctx["step"] = "tid"
-                await self._send(ev, "【3/8】请输入分区（分区名或数字 tid，/biliup分区 可查看列表）：")
+                await self._send(ev, "【3/9】请输入分区（分区名或数字 tid，/biliup分区 可查看列表）：")
             else:
                 await self._send(ev, "❌ 请回复【原创】或【转载】。")
 
         elif step == "source":
             meta["source"] = "" if text == "跳过" else text
             ctx["step"] = "tid"
-            await self._send(ev, "【3/8】请输入分区（分区名或数字 tid，/biliup分区 可查看列表）：")
+            await self._send(ev, "【3/9】请输入分区（分区名或数字 tid，/biliup分区 可查看列表）：")
 
         elif step == "tid":
             tid = self._resolve_tid(text)
@@ -400,12 +400,12 @@ class BiliUpPlugin(star.Star):
                 return
             meta["tid"] = tid
             ctx["step"] = "desc"
-            await self._send(ev, "【4/8】请输入视频简介（回复【跳过】将使用标题作为简介）：")
+            await self._send(ev, "【4/9】请输入视频简介（回复【跳过】将使用标题作为简介）：")
 
         elif step == "desc":
             meta["desc"] = meta["title"] if text in ("跳过", "") else text[:2000]
             ctx["step"] = "tags"
-            await self._send(ev, "【5/8】请输入标签，多个用逗号分隔（最多 12 个）：")
+            await self._send(ev, "【5/9】请输入标签，多个用逗号分隔（最多 12 个）：")
 
         elif step == "tags":
             tag_list = [t.strip() for t in re.split(r"[,，、|]", text) if t.strip()][:12]
@@ -415,12 +415,12 @@ class BiliUpPlugin(star.Star):
                 return
             meta["tags"] = ",".join(tag_list)
             ctx["step"] = "cover"
-            await self._send(ev, "【6/8】请发送封面图片，或回复【跳过】不设置封面：")
+            await self._send(ev, "【6/9】请发送封面图片，或回复【跳过】不设置封面：")
 
         elif step == "cover":
             if text == "跳过":
                 ctx["step"] = "dynamic"
-                await self._send(ev, "【7/8】请输入投稿附带的粉丝动态文案（回复【跳过】不设置）：")
+                await self._send(ev, "【7/9】请输入投稿附带的粉丝动态文案（回复【跳过】不设置）：")
                 return
             img = next((c for c in ev.get_messages() if isinstance(c, Image)), None)
             if img is None:
@@ -435,27 +435,45 @@ class BiliUpPlugin(star.Star):
             except Exception as e:
                 await self._send(ev, f"⚠️ 封面接收失败（{e}），已跳过封面。")
             ctx["step"] = "dynamic"
-            await self._send(ev, "【7/8】请输入投稿附带的粉丝动态文案（回复【跳过】不设置）：")
+            await self._send(ev, "【7/9】请输入投稿附带的粉丝动态文案（回复【跳过】不设置）：")
 
         elif step == "dynamic":
             meta["dynamic"] = "" if text == "跳过" else text
+            ctx["step"] = "cooperate"
+            await self._send(ev, "【可选】请输入联合创作者 UID（多个用逗号分隔，回复【跳过】不设置联合投稿）：")
+
+        elif step == "cooperate":
+            if text == "跳过":
+                meta["cooperate_uids"] = []
+            else:
+                uids = [int(t.strip()) for t in re.split(r"[,，\s]", text) if t.strip().isdigit()]
+                if not uids:
+                    await self._send(ev, "⚠️ 未识别到有效 UID，请输入纯数字 UID（多个用逗号分隔），或回复【跳过】。")
+                    controller.keep(self.recv_timeout, reset_timeout=True)
+                    return
+                meta["cooperate_uids"] = uids
             ctx["step"] = "confirm"
             size_mb = meta.get("size_mb", 0)
-            summary = (
-                "📋 投稿信息确认：\n"
-                f"标题：{meta.get('title')}\n"
+            lines = [
+                "📋 投稿信息确认：",
+                f"标题：{meta.get('title')}",
                 f"类型：{'原创' if meta.get('copyright') == 1 else '转载'}"
-                + (f"（来源：{meta.get('source')}）" if meta.get("source") else "") + "\n"
-                f"分区：tid={meta.get('tid')}\n"
-                f"标签：{meta.get('tags')}\n"
+                + (f"（来源：{meta.get('source')}）" if meta.get("source") else ""),
+                f"分区：tid={meta.get('tid')}",
+                f"标签：{meta.get('tags')}",
                 f"简介：{(meta.get('desc') or '')[:100]}"
-                + ("…" if len(meta.get('desc') or '') > 100 else "") + "\n"
-                f"封面：{'已设置' if meta.get('cover') else '无'}\n"
-                f"动态：{meta.get('dynamic') or '无'}\n"
-                f"视频：{os.path.basename(meta.get('path', ''))}（{size_mb:.1f}MB）\n"
-                "——————————————\n"
-                "确认无误请回复【投稿】；回复其他内容取消。"
-            )
+                + ("…" if len(meta.get('desc') or '') > 100 else ""),
+                f"封面：{'已设置' if meta.get('cover') else '无'}",
+                f"动态：{meta.get('dynamic') or '无'}",
+            ]
+            if meta.get("cooperate_uids"):
+                lines.append(f"联合创作者：{', '.join(str(u) for u in meta['cooperate_uids'])}")
+            lines.extend([
+                f"视频：{os.path.basename(meta.get('path', ''))}（{size_mb:.1f}MB）",
+                "——————————————",
+                "确认无误请回复【投稿】；回复其他内容取消。",
+            ])
+            summary = "\n".join(lines)
             await self._send(ev, summary)
 
         elif step == "confirm":

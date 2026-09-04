@@ -51,12 +51,15 @@ def _make_session(cookies: dict) -> requests.Session:
     return s
 
 
-def _json(resp: requests.Response) -> dict:
-    """解析 JSON 并统一报错。"""
+def _json(resp: requests.Response, what: str = "API") -> dict:
+    """解析 JSON 并统一报错。包含步骤上下文和响应体摘要。"""
     try:
         return resp.json()
     except Exception as e:
-        raise BiliUploadError(f"响应解析失败(HTTP {resp.status_code}): {e}") from e
+        body = resp.text[:300] if resp.text else "(空响应)"
+        raise BiliUploadError(
+            f"[{what}] 解析失败(HTTP {resp.status_code}): {e} | 响应: {body}"
+        ) from e
 
 
 def _bili_raise(ret: dict, what: str) -> None:
@@ -73,7 +76,7 @@ def _probe(session: requests.Session) -> dict:
     try:
         ret = _json(session.get(
             "https://member.bilibili.com/preupload?r=probe", timeout=30,
-        ))
+        ), "线路探测")
         lines = ret.get("lines") or []
         if not lines:
             return dict(_FALLBACK_LINE)
@@ -115,7 +118,7 @@ def _preupload(session: requests.Session, path: str, line: dict) -> dict:
     ret = _json(session.get(
         f"https://member.bilibili.com/preupload?{line.get('query', '')}",
         params=params, timeout=30,
-    ))
+    ), "获取上传凭证")
     for key in ("auth", "endpoint", "upos_uri", "biz_id", "chunk_size"):
         if key not in ret:
             raise BiliUploadError(f"preupload 响应缺少字段: {key}")
@@ -133,7 +136,7 @@ def _upload_upos(
     headers = {"X-Upos-Auth": pre["auth"]}
 
     # 申请 upload_id
-    init_ret = _json(session.post(f"{url}?uploads&output=json", headers=headers, timeout=30))
+    init_ret = _json(session.post(f"{url}?uploads&output=json", headers=headers, timeout=30), "初始化上传")
     upload_id = init_ret.get("upload_id")
     if not upload_id:
         raise BiliUploadError(f"初始化上传失败: {init_ret}")
@@ -185,7 +188,7 @@ def _upload_upos(
             merge_ret = _json(session.post(
                 url, params=merge_params, json={"parts": parts},
                 headers=headers, timeout=60,
-            ))
+            ), "合并分片")
             if merge_ret.get("OK") == 1:
                 filename = os.path.splitext(os.path.basename(pre["upos_uri"]))[0]
                 return {
@@ -221,7 +224,7 @@ def _cover_up(session: requests.Session, cover_path: str, csrf: str) -> str:
         url="https://member.bilibili.com/x/vu/web/cover/up",
         data={"cover": _COVER_DATA_PREFIX + b64, "csrf": csrf},
         timeout=60,
-    ))
+    ), "封面上传")
     url = (ret.get("data") or {}).get("url")
     if not url:
         raise BiliUploadError(f"封面上传失败: {ret}")
@@ -290,6 +293,16 @@ def bili_upload(
         if cover and os.path.exists(cover):
             payload["cover"] = _cover_up(session, cover, csrf)
 
+        # 联合创作者（可选）
+        cooperate_uids = meta.get("cooperate_uids")
+        if cooperate_uids:
+            payload["extra_fields"] = json.dumps({
+                "cooperate_user": [
+                    {"uid": uid, "role": 1, "sub_type": 0}
+                    for uid in cooperate_uids
+                ],
+            })
+
         # 极验预检（与官方工具一致）
         try:
             session.get("https://member.bilibili.com/x/geetest/pre/add", timeout=10)
@@ -300,7 +313,7 @@ def bili_upload(
             f"https://member.bilibili.com/x/vu/web/add?csrf={csrf}",
             json=payload,
             timeout=60,
-        ))
+        ), "投稿提交")
         _bili_raise(ret, "投稿提交")
         return ret
     finally:
